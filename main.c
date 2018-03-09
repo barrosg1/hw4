@@ -14,10 +14,10 @@
 #define FILE_NAME_MAX 1024
 #endif
 
-void processDirectory(char*, FILE*);
-
+// global variable
 int pfds[2];
 
+void processDirectory(char*, FILE*);
 
 enum { FALSE, TRUE }; /* Booleans */
 
@@ -25,7 +25,6 @@ typedef struct FileInfo
 {
 	char f_name[FILE_NAME_MAX];
 	int f_size;
-
 
 } FileInfo;
 
@@ -35,7 +34,6 @@ int main(int argc, char * argv[]) {
     char* dirName;
     int pid, ret;
     FileInfo f_info;
-
 
     if(argc != 2)
     {
@@ -48,7 +46,6 @@ int main(int argc, char * argv[]) {
     	dirName = argv[1];
 
     	ret = pipe(pfds);
-
 		if(ret == -1)
 		{
 			perror("Pipe Error");
@@ -74,18 +71,13 @@ int main(int argc, char * argv[]) {
 			close(pfds[1]);
 			fscanf(reader, "%d, %s\n", &size, f_info.f_name);
 
-
-
 			wait(NULL);
-
 		}
     }
 
     return 0;
 
 }
-
-
 
 void processDirectory(char *dirName, FILE* writer)
 {
@@ -96,9 +88,7 @@ void processDirectory(char *dirName, FILE* writer)
 	int fd, charsRead;
 	off_t mode;
 
-
 	fd=open(dirName, O_RDONLY); /* Open for reading */
-
 	if ( fd == -1 ) {
 		perror("monitor");
 		exit(0);
@@ -118,14 +108,11 @@ void processDirectory(char *dirName, FILE* writer)
 		if ( charsRead == 0 ) break;  /* EOF */
 
 		if ( strcmp(dirEntry.d_name, ".") != 0 &&
-
 			strcmp( dirEntry.d_name, "..") != 0 ) {/*Skip . and  ..*/
-
 
 			sprintf(filePath, "%s/%s", dirName, dirEntry.d_name);
 
 			stat(filePath, &st);
-
 			mode = st.st_mode;
 			size = st.st_size;
 
@@ -135,23 +122,19 @@ void processDirectory(char *dirName, FILE* writer)
 			}
 			else if (S_ISREG(mode))
 			{
-
 				fprintf(writer, "%d, %s\n", size, filePath);
 				close(pfds[0]);
 				fflush(writer);
 
 				//printf("FILE: %s\n", filePath);
-
 			}
 
 		}
 
 		lseek( fd, dirEntry.d_off, SEEK_SET ); /*Find next entry */
-
 	}
 
 	close(fd);
-
 }
 
 
