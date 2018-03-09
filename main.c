@@ -14,7 +14,10 @@
 #define FILE_NAME_MAX 1024
 #endif
 
-void processDirectory(char*);
+void processDirectory(char*, FILE*);
+
+int pfds[2];
+
 
 enum { FALSE, TRUE }; /* Booleans */
 
@@ -30,118 +33,150 @@ typedef struct FileInfo
 int main(int argc, char * argv[]) {
 
     char* dirName;
+    int pid, ret;
+    FileInfo f_info;
+
 
     if(argc != 2)
     {
         puts("Invalid command line argument.");
         return -1;
     }
-    else {
+    else
+    {
 
     	dirName = argv[1];
-    	processDirectory(dirName);
+
+    	ret = pipe(pfds);
+
+		if(ret == -1)
+		{
+			perror("Pipe Error");
+			exit(1);
+		}
+
+		FILE *reader = fdopen(pfds[0], "r");
+		FILE *writer = fdopen(pfds[1], "w");
+
+    	pid = fork();
+
+		if(pid == 0)
+		{ /* CHILD Process */
+
+			processDirectory(dirName, writer);
+
+		}
+		else
+		{ /* PARENT Process */
+
+			int size = f_info.f_size;
+
+			close(pfds[1]);
+			fscanf(reader, "%d, %s\n", &size, f_info.f_name);
+
+
+
+			wait(NULL);
+
+		}
     }
 
     return 0;
 
 }
 
-void processDirectory(char *dirName)
+
+
+void processDirectory(char *dirName, FILE* writer)
 {
 
 	struct dirent dirEntry;
 	struct stat st;
 	char filePath[FILE_NAME_MAX];
 	int fd, charsRead;
-	int pid, ret;
-	int pfds[2];
 	off_t mode;
 
-	ret = pipe(pfds);
 
-	if(ret == -1)
-	{
-		perror("Pipe Error");
-		exit(1);
+	fd=open(dirName, O_RDONLY); /* Open for reading */
+
+	if ( fd == -1 ) {
+		perror("monitor");
+		exit(0);
 	}
 
-	pid = fork();
+	while( TRUE ) { /* Read all directory entries */
 
+		charsRead = syscall(SYS_getdents64, fd, &dirEntry, sizeof(struct dirent) );
+		int size;
 
-	if(pid == 0)
-	{
-
-		/* CHILD Process */
-
-
-		fd=open(dirName, O_RDONLY); /* Open for reading */
-
-		if ( fd == -1 ) {
-
-			perror("monitor:");
+		if ( charsRead == -1 )
+		{
+			perror("charsRead");
 			exit(0);
 		}
 
-		//write(pfds[1], "Gabriel", 8);
+		if ( charsRead == 0 ) break;  /* EOF */
 
-		while( TRUE ) { /* Read all directory entries */
+		if ( strcmp(dirEntry.d_name, ".") != 0 &&
 
-			charsRead = syscall(SYS_getdents64, fd, &dirEntry, sizeof(struct dirent) );
-
-			if ( charsRead == -1 ) {perror("monitor:"); exit(0);}
-
-			if ( charsRead == 0 ) break;  /* EOF */
-
-			if ( strcmp(dirEntry.d_name, ".") != 0 &&
-
-				strcmp( dirEntry.d_name, "..") != 0 ) {/*Skip . and  ..*/
+			strcmp( dirEntry.d_name, "..") != 0 ) {/*Skip . and  ..*/
 
 
-				sprintf(filePath, "%s/%s", dirName, dirEntry.d_name);
+			sprintf(filePath, "%s/%s", dirName, dirEntry.d_name);
 
-				stat(filePath, &st);
+			stat(filePath, &st);
 
-				mode = st.st_mode;
+			mode = st.st_mode;
+			size = st.st_size;
 
-				if(S_ISDIR(mode))
-				{
-					processDirectory(filePath);
-				}
-				else if (S_ISREG(mode)) {
+			if(S_ISDIR(mode))
+			{
+				processDirectory(filePath, writer);
+			}
+			else if (S_ISREG(mode))
+			{
 
+				fprintf(writer, "%d, %s\n", size, filePath);
+				close(pfds[0]);
+				fflush(writer);
 
-					write(pfds[1], &filePath, strlen(filePath) + 1);
-
-					//printf("%s\n",filePath);
-
-
-				}
+				//printf("FILE: %s\n", filePath);
 
 			}
 
-			lseek( fd, dirEntry.d_off, SEEK_SET ); /*Find next entry */
-
 		}
 
-		close(fd);
-
-		//close(pfds[0]);
+		lseek( fd, dirEntry.d_off, SEEK_SET ); /*Find next entry */
 
 	}
-	else
-	{
 
-		/* PARENT Process */
-
-		FileInfo f_info;
-
-		close(pfds[1]);
-
-		read(pfds[0], f_info.f_name, sizeof(f_info.f_name));
-		printf("PARENT read: %s\n", f_info.f_name);
-
-		wait(NULL);
-	}
-
+	close(fd);
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
