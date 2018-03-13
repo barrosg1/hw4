@@ -1,18 +1,23 @@
-#include <stdio.h>            /* For printf, fprintf */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <fcntl.h>
 #include <sys/syscall.h>
-#include <dirent.h>        /* For getdents */
+#include <dirent.h>
 #include <unistd.h>
-#include <sys/stat.h>        /* For IS macros */
-#include <sys/types.h>        /* For modet */
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 
 #ifndef FILE_NAME_MAX
 #define FILE_NAME_MAX 1024
 #endif
+
+void processDirectory(FILE*,char*);
+void readFileInfo(FILE* reader, int, char*);
+void DisplayList();
+void sortList(int, char*);
 
 enum { FALSE, TRUE }; /* Booleans */
 
@@ -20,7 +25,6 @@ struct FileInfo
 {
 	char f_name[FILE_NAME_MAX];
 	int f_size;
-
 };
 
 /* self-referential structure */
@@ -31,34 +35,13 @@ struct Node
     struct Node *next;
 };
 
-struct List
-{
-    struct Node *head;
-    struct Node *tail;
-};
-
-struct List new_list()
-{
-    /* construct an empty list */
-    struct List list;
-    list.head = NULL;
-    list.tail = NULL;
-    return list;
-};
-
-void processDirectory(char*, FILE*);
-int list_empty(struct List *list);
-void list_push(struct List *list, int, char*);
-void list_append(struct List *list, int, char*);
-void DisplayList(struct List * list);
-void sortList(struct List * list);
+struct Node *head = NULL;
 
 int main(int argc, char * argv[])
 {
 
     char* dirName;
     int pid, ret, pfds[2];
-    struct FileInfo f_info;
 
     if(argc != 2)
     {
@@ -69,7 +52,7 @@ int main(int argc, char * argv[])
     {
     	dirName = argv[1];
 
-    	ret = pipe(pfds);
+    	ret = pipe(pfds);  // creating pipe
 		if(ret == -1)
 		{
 			perror("Pipe Error");
@@ -79,7 +62,7 @@ int main(int argc, char * argv[])
 		FILE *reader = fdopen(pfds[0], "r");
 		FILE *writer = fdopen(pfds[1], "w");
 
-    	pid = fork();
+    	pid = fork(); // spawning a process
 
     	if(pid < 0)
     	{
@@ -90,38 +73,19 @@ int main(int argc, char * argv[])
 		{ /* CHILD Process */
 
 			close(pfds[0]); /* close read pipe */
-			processDirectory(dirName, writer); /* scan files and write file info to pipe */
+			processDirectory(writer, dirName); /* scan files and write file info to pipe */
 
 		}
 		else
 		{ /* PARENT Process */
 
-			struct List list = new_list();
+			struct FileInfo f_info;
 			int size = f_info.f_size;
 			char* fileName = f_info.f_name;
 
 			close(pfds[1]); /* close write pipe */
-
-			/* exit if there aren't enough data in the read file */
-			if(fscanf(reader, "%d, %s\n", &size, fileName) != 2) exit(0);
-
-
-			/* Reading data from the pipe */
-			while(fscanf(reader, "%d, %s\n", &size, fileName) == 2)
-			{
-
-				char* fname = malloc(strlen(fileName)+1);
-				strcpy(fname, fileName);
-
-				/* adding the data read to the linked list */
-				list_append(&list, size, fname);
-
-			}
-
-			sortList(&list);
-
-			/* output all the data */
-			DisplayList(&list);
+			readFileInfo(reader, size, fileName); /* read file information and sort */
+			DisplayList();  /* output all the data */
 
 			wait(NULL);
 		}
@@ -131,7 +95,7 @@ int main(int argc, char * argv[])
 
 }
 
-void processDirectory(char *dirName, FILE* writer)
+void processDirectory(FILE* writer, char *dirName)
 {
 
 	struct dirent dirEntry;
@@ -154,7 +118,7 @@ void processDirectory(char *dirName, FILE* writer)
 	while( TRUE )
 	{ /* Read all directory entries */
 
-		charsRead = syscall(SYS_getdents64, fd, &dirEntry, sizeof(struct dirent) );
+		charsRead = syscall(SYS_getdents64, fd, &dirEntry, sizeof(struct dirent));
 		int size;
 
 		if ( charsRead == -1 )
@@ -170,18 +134,19 @@ void processDirectory(char *dirName, FILE* writer)
 
 			sprintf(filePath, "%s/%s", dirName, dirEntry.d_name);
 
-			stat(filePath, &st);
+			stat(filePath, &st);  // getting info from each file
 			mode = st.st_mode;
 			size = st.st_size;
 
 			if(S_ISDIR(mode))
 			{
-				processDirectory(filePath, writer);
+				processDirectory(writer, filePath);
 			}
 
 			else if (S_ISREG(mode))
 			{
-				fprintf(writer, "%d, %s\n", size, filePath);
+
+				fprintf(writer, "%d, %s\n", size, filePath); // write file info to writer
 				fflush(writer);
 			}
 
@@ -193,93 +158,79 @@ void processDirectory(char *dirName, FILE* writer)
 	close(fd);
 }
 
-
-int list_empty(struct List *list)
+void readFileInfo(FILE* reader, int fsize, char* fileName)
 {
-    /* return true if the list contains no items */
-    return list->head == NULL;
-}
 
-void list_push(struct List *list, int fsize, char* fname)
-{
-    /*  insert the item at the beginning of the list */
-    struct Node *node = malloc(sizeof(struct Node));
-    node->fileSize = fsize;
-    node->fileName = fname;
-    node->next = list->head;
+	/* exit if there aren't enough data in the read file */
+	if(fscanf(reader, "%d, %s\n", &fsize, fileName) != 2) exit(0);
 
-    if(list_empty(list))
-    {
-    	list->tail = node;
-    }
+	/* Reading data from the pipe */
+	while(fscanf(reader, "%d, %s\n", &fsize, fileName) == 2)
+	{
+		char* fname = malloc(strlen(fileName)+1);
+		strcpy(fname, fileName);
 
-    list->head = node;
-}
-
-void list_append(struct List *list, int fsize, char* fname)
-{
-    /* append the item to the end of the list */
-    if (list_empty(list))
-    {
-        list_push(list, fsize, fname);
-    }
-    else
-    {
-        struct Node *node = malloc(sizeof(struct Node));
-
-        node->fileSize = fsize;
-        node->fileName = fname;
-
-        node->next = NULL;
-        list->tail->next = node;
-        list->tail = node;
-    }
-}
-
-void DisplayList(struct List * list)
-{
-    struct Node * nod = list->head;
-    while (nod != NULL)
-    {
-        printf("%d\t%s\n", nod->fileSize, nod->fileName);
-        nod = nod->next;
-    }
-}
-
-void sortList(struct List * list)
-{
-    struct Node * nod = list->head;
-    if (!nod->next)
-    {
-    	list->head = nod;
-    	list->tail = nod;
-    	return;
-    }
-    struct Node * nod2 = list->head;
-    int temp;
-    char* tempChar;
-    while (nod != NULL)
-    {
-        nod2 = list->head;
-        while (nod2 != NULL)
-        {
-            if (nod->fileSize < nod2->fileSize)
-            {
-                //swap fileSize
-                temp = nod->fileSize;
-                nod->fileSize = nod2->fileSize;
-                nod2->fileSize = temp;
-
-                // swap fileName
-                tempChar = nod->fileName;
-				nod->fileName = nod2->fileName;
-				nod2->fileName = tempChar;
-
-            }
-            nod2 = nod2->next;
-        }
-        nod = nod->next;
-    }
+		/* adding the data read to the linked list and sorting */
+		sortList(fsize, fname);
+	}
 
 }
 
+void DisplayList()
+{
+	struct Node *node = head;
+    while (node != NULL)
+    {
+        printf("%d\t%s\n", node->fileSize, node->fileName);
+        node = node->next;
+    }
+}
+
+void sortList(int fsize, char* fname)
+{ // insertion sort
+
+	struct Node *temp=head;
+	struct Node *prev=NULL;
+	struct Node *node;
+
+	node= (struct Node*) malloc(sizeof(struct Node));
+	node->fileSize = fsize;
+	node->fileName = fname;
+	node->next = NULL;
+
+	if(temp == NULL)
+	{ // if linked list is empty
+		node->next = NULL;
+		head = node;
+		return;
+	}
+
+	if(fsize < temp->fileSize )
+	{
+		node->next=head;
+		head=node;
+		return;
+	}
+	else
+	{
+		while(temp != NULL)
+		{
+			if(fsize > temp->fileSize || fsize == temp->fileSize)
+			{
+				// traversing to position to insert the node
+				prev = temp;
+				temp = temp->next;
+				continue;
+			}
+			else
+			{
+				// inserting node
+				prev->next = node;
+				node->next = temp;
+				return;
+			}
+		}
+		prev->next=node;  //Insert node at the last position
+	}
+
+}
