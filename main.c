@@ -138,6 +138,7 @@ void processDirectory(FILE* writer, char *dirName)
 			mode = st.st_mode;
 			size = st.st_size;
 
+
 			if(S_ISDIR(mode))
 			{
 				processDirectory(writer, filePath);
@@ -160,17 +161,12 @@ void processDirectory(FILE* writer, char *dirName)
 
 void readFileInfo(FILE* reader, int fsize, char* fileName)
 {
-
-	/* exit if there aren't enough data in the read file */
-	if(fscanf(reader, "%d, %s\n", &fsize, fileName) != 2) exit(0);
-
-	/* Reading data from the pipe */
 	while(fscanf(reader, "%d, %s\n", &fsize, fileName) == 2)
 	{
 		char* fname = malloc(strlen(fileName)+1);
 		strcpy(fname, fileName);
 
-		/* adding the data read to the linked list and sorting */
+		// adding the data read to the linked list and sorting
 		sortList(fsize, fname);
 	}
 
