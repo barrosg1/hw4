@@ -134,7 +134,7 @@ void processDirectory(FILE* writer, char *dirName)
 
 			sprintf(filePath, "%s/%s", dirName, dirEntry.d_name);
 
-			stat(filePath, &st);  // getting info from each file
+			lstat(filePath, &st);  // getting info from each file
 			mode = st.st_mode;
 			size = st.st_size;
 
